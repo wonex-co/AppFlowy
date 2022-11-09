@@ -5,10 +5,9 @@ use flowy_document::{
     DocumentCloudService, DocumentConfig, DocumentDatabase, DocumentManager, DocumentUser,
 };
 use flowy_http_model::ws_data::ClientRevisionWSData;
+use flowy_net::ws_connection::WebSocketConnect;
 use flowy_net::ClientServerConfiguration;
-use flowy_net::{
-    http_server::document::DocumentCloudServiceImpl, local_server::LocalServer, ws::connection::FlowyWebSocketConnect,
-};
+use flowy_net::{http_server::document::DocumentCloudServiceImpl, local_server::LocalServer};
 use flowy_revision::{RevisionWebSocket, WSStateReceiver};
 use flowy_user::services::UserSession;
 use futures_core::future::BoxFuture;
@@ -20,7 +19,7 @@ pub struct DocumentDepsResolver();
 impl DocumentDepsResolver {
     pub fn resolve(
         local_server: Option<Arc<LocalServer>>,
-        ws_conn: Arc<FlowyWebSocketConnect>,
+        ws_conn: Arc<WebSocketConnect>,
         user_session: Arc<UserSession>,
         server_config: &ClientServerConfiguration,
         document_config: &DocumentConfig,
@@ -75,7 +74,7 @@ impl DocumentDatabase for DocumentDatabaseImpl {
     }
 }
 
-struct DocumentRevisionWebSocket(Arc<FlowyWebSocketConnect>);
+struct DocumentRevisionWebSocket(Arc<WebSocketConnect>);
 impl RevisionWebSocket for DocumentRevisionWebSocket {
     fn send(&self, data: ClientRevisionWSData) -> BoxResultFuture<(), FlowyError> {
         let bytes: Bytes = data.try_into().unwrap();

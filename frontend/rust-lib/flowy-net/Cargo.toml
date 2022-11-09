@@ -20,13 +20,11 @@ lib-infra = { path = "../../../shared-lib/lib-infra" }
 protobuf = {version = "2.18.0"}
 lib-ws = { path = "../../../shared-lib/lib-ws" }
 bytes = { version = "1.0" }
-anyhow = "1.0"
 tokio = {version = "1", features = ["sync"]}
 parking_lot = "0.12.1"
 strum = "0.21"
 strum_macros = "0.21"
 tracing = { version = "0.1", features = ["log"] }
-dashmap = "5"
 async-stream = "0.3.2"
 futures-util = "0.3.15"
 http-flowy = { git = "https://github.com/AppFlowy-IO/AppFlowy-Server", features = ["with_reqwest"] }

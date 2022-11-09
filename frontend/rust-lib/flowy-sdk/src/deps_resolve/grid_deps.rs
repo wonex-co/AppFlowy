@@ -4,7 +4,7 @@ use flowy_database::ConnectionPool;
 use flowy_grid::manager::{GridManager, GridUser};
 use flowy_grid::services::persistence::GridDatabase;
 use flowy_http_model::ws_data::ClientRevisionWSData;
-use flowy_net::ws::connection::FlowyWebSocketConnect;
+use flowy_net::ws_connection::WebSocketConnect;
 use flowy_revision::{RevisionWebSocket, WSStateReceiver};
 use flowy_user::services::UserSession;
 use futures_core::future::BoxFuture;
@@ -16,7 +16,7 @@ use std::sync::Arc;
 pub struct GridDepsResolver();
 
 impl GridDepsResolver {
-    pub async fn resolve(ws_conn: Arc<FlowyWebSocketConnect>, user_session: Arc<UserSession>) -> Arc<GridManager> {
+    pub async fn resolve(ws_conn: Arc<WebSocketConnect>, user_session: Arc<UserSession>) -> Arc<GridManager> {
         let user = Arc::new(GridUserImpl(user_session.clone()));
         let rev_web_socket = Arc::new(GridRevisionWebSocket(ws_conn));
         let grid_manager = Arc::new(GridManager::new(
@@ -58,7 +58,7 @@ impl GridUser for GridUserImpl {
     }
 }
 
-struct GridRevisionWebSocket(Arc<FlowyWebSocketConnect>);
+struct GridRevisionWebSocket(Arc<WebSocketConnect>);
 impl RevisionWebSocket for GridRevisionWebSocket {
     fn send(&self, data: ClientRevisionWSData) -> BoxResultFuture<(), FlowyError> {
         let bytes: Bytes = data.try_into().unwrap();

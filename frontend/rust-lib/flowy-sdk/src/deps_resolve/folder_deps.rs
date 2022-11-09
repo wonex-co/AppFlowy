@@ -14,10 +14,9 @@ use flowy_grid::manager::{make_grid_view_data, GridManager};
 use flowy_grid::util::{make_default_board, make_default_grid};
 use flowy_http_model::revision::Revision;
 use flowy_http_model::ws_data::ClientRevisionWSData;
+use flowy_net::ws_connection::WebSocketConnect;
 use flowy_net::ClientServerConfiguration;
-use flowy_net::{
-    http_server::folder::FolderHttpCloudService, local_server::LocalServer, ws::connection::FlowyWebSocketConnect,
-};
+use flowy_net::{http_server::folder::FolderHttpCloudService, local_server::LocalServer};
 use flowy_revision::{RevisionWebSocket, WSStateReceiver};
 use flowy_user::services::UserSession;
 use futures_core::future::BoxFuture;
@@ -34,7 +33,7 @@ impl FolderDepsResolver {
         local_server: Option<Arc<LocalServer>>,
         user_session: Arc<UserSession>,
         server_config: &ClientServerConfiguration,
-        ws_conn: &Arc<FlowyWebSocketConnect>,
+        ws_conn: &Arc<WebSocketConnect>,
         text_block_manager: &Arc<DocumentManager>,
         grid_manager: &Arc<GridManager>,
     ) -> Arc<FolderManager> {
@@ -100,7 +99,7 @@ impl WorkspaceUser for WorkspaceUserImpl {
     }
 }
 
-struct FolderRevisionWebSocket(Arc<FlowyWebSocketConnect>);
+struct FolderRevisionWebSocket(Arc<WebSocketConnect>);
 impl RevisionWebSocket for FolderRevisionWebSocket {
     fn send(&self, data: ClientRevisionWSData) -> BoxResultFuture<(), FlowyError> {
         let bytes: Bytes = data.try_into().unwrap();

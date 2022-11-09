@@ -1,13 +1,13 @@
 use flowy_document::DocumentManager;
 use flowy_folder::manager::FolderManager;
 use flowy_grid::manager::GridManager;
-use flowy_net::ws::connection::FlowyWebSocketConnect;
+use flowy_net::ws_connection::WebSocketConnect;
 use flowy_user::services::UserSession;
 use lib_dispatch::prelude::Module;
 use std::sync::Arc;
 
 pub fn mk_modules(
-    ws_conn: &Arc<FlowyWebSocketConnect>,
+    ws_conn: &Arc<WebSocketConnect>,
     folder_manager: &Arc<FolderManager>,
     grid_manager: &Arc<GridManager>,
     user_session: &Arc<UserSession>,
@@ -35,7 +35,7 @@ fn mk_folder_module(folder_manager: Arc<FolderManager>) -> Module {
     flowy_folder::event_map::create(folder_manager)
 }
 
-fn mk_network_module(ws_conn: Arc<FlowyWebSocketConnect>) -> Module {
+fn mk_network_module(ws_conn: Arc<WebSocketConnect>) -> Module {
     flowy_net::event_map::create(ws_conn)
 }
 

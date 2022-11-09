@@ -1,15 +1,16 @@
-use crate::ws::connection::{FlowyRawWebSocket, FlowyWebSocket};
+use crate::ws_connection::{RawWebSocket, WebSocketMessageSender};
 use flowy_error::internal_error;
 pub use flowy_error::FlowyError;
+use futures_util::future::BoxFuture;
 use lib_infra::future::FutureResult;
 pub use lib_ws::{WSConnectState, WSMessageReceiver, WebSocketRawMessage};
 use lib_ws::{WSController, WSSender};
-
-use futures_util::future::BoxFuture;
 use std::sync::Arc;
 use tokio::sync::broadcast::Receiver;
 
-impl FlowyRawWebSocket for Arc<WSController> {
+pub type HttpWebSocket = Arc<WSController>;
+
+impl RawWebSocket for HttpWebSocket {
     fn initialize(&self) -> FutureResult<(), FlowyError> {
         FutureResult::new(async { Ok(()) })
     }
@@ -43,18 +44,18 @@ impl FlowyRawWebSocket for Arc<WSController> {
         })
     }
 
-    fn add_msg_receiver(&self, receiver: Arc<dyn WSMessageReceiver>) -> Result<(), FlowyError> {
+    fn add_receiver(&self, receiver: Arc<dyn WSMessageReceiver>) -> Result<(), FlowyError> {
         let _ = self.add_ws_message_receiver(receiver).map_err(internal_error)?;
         Ok(())
     }
 
-    fn ws_msg_sender(&self) -> FutureResult<Option<Arc<dyn FlowyWebSocket>>, FlowyError> {
+    fn get_sender(&self) -> FutureResult<Option<Arc<dyn WebSocketMessageSender>>, FlowyError> {
         let cloned_self = self.clone();
         FutureResult::new(async move {
             match cloned_self.ws_message_sender().await.map_err(internal_error)? {
                 None => Ok(None),
                 Some(sender) => {
-                    let sender = sender as Arc<dyn FlowyWebSocket>;
+                    let sender = sender as Arc<dyn WebSocketMessageSender>;
                     Ok(Some(sender))
                 }
             }
@@ -62,7 +63,7 @@ impl FlowyRawWebSocket for Arc<WSController> {
     }
 }
 
-impl FlowyWebSocket for WSSender {
+impl WebSocketMessageSender for WSSender {
     fn send(&self, msg: WebSocketRawMessage) -> Result<(), FlowyError> {
         let _ = self.send_msg(msg).map_err(internal_error)?;
         Ok(())

@@ -10,32 +10,32 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 
-pub trait FlowyRawWebSocket: Send + Sync {
+pub trait RawWebSocket: Send + Sync {
     fn initialize(&self) -> FutureResult<(), FlowyError>;
     fn start_connect(&self, addr: String, user_id: String) -> FutureResult<(), FlowyError>;
     fn stop_connect(&self) -> FutureResult<(), FlowyError>;
     fn subscribe_connect_state(&self) -> BoxFuture<broadcast::Receiver<WSConnectState>>;
     fn reconnect(&self, count: usize) -> FutureResult<(), FlowyError>;
-    fn add_msg_receiver(&self, receiver: Arc<dyn WSMessageReceiver>) -> Result<(), FlowyError>;
-    fn ws_msg_sender(&self) -> FutureResult<Option<Arc<dyn FlowyWebSocket>>, FlowyError>;
+    fn add_receiver(&self, receiver: Arc<dyn WSMessageReceiver>) -> Result<(), FlowyError>;
+    fn get_sender(&self) -> FutureResult<Option<Arc<dyn WebSocketMessageSender>>, FlowyError>;
 }
 
-pub trait FlowyWebSocket: Send + Sync {
+pub trait WebSocketMessageSender: Send + Sync {
     fn send(&self, msg: WebSocketRawMessage) -> Result<(), FlowyError>;
 }
 
-pub struct FlowyWebSocketConnect {
-    inner: Arc<dyn FlowyRawWebSocket>,
+pub struct WebSocketConnect {
+    inner: Arc<dyn RawWebSocket>,
     connect_type: RwLock<NetworkType>,
     status_notifier: broadcast::Sender<NetworkType>,
     addr: String,
 }
 
-impl FlowyWebSocketConnect {
+impl WebSocketConnect {
     pub fn new(addr: String) -> Self {
         let ws = Arc::new(Arc::new(WSController::new()));
         let (status_notifier, _) = broadcast::channel(10);
-        FlowyWebSocketConnect {
+        WebSocketConnect {
             inner: ws,
             connect_type: RwLock::new(NetworkType::default()),
             status_notifier,
@@ -43,9 +43,9 @@ impl FlowyWebSocketConnect {
         }
     }
 
-    pub fn from_local(addr: String, ws: Arc<dyn FlowyRawWebSocket>) -> Self {
+    pub fn from_local(addr: String, ws: Arc<dyn RawWebSocket>) -> Self {
         let (status_notifier, _) = broadcast::channel(10);
-        FlowyWebSocketConnect {
+        WebSocketConnect {
             inner: ws,
             connect_type: RwLock::new(NetworkType::default()),
             status_notifier,
@@ -102,17 +102,17 @@ impl FlowyWebSocketConnect {
     }
 
     pub fn add_ws_message_receiver(&self, receiver: Arc<dyn WSMessageReceiver>) -> Result<(), FlowyError> {
-        let _ = self.inner.add_msg_receiver(receiver)?;
+        let _ = self.inner.add_receiver(receiver)?;
         Ok(())
     }
 
-    pub async fn web_socket(&self) -> Result<Option<Arc<dyn FlowyWebSocket>>, FlowyError> {
-        self.inner.ws_msg_sender().await
+    pub async fn web_socket(&self) -> Result<Option<Arc<dyn WebSocketMessageSender>>, FlowyError> {
+        self.inner.get_sender().await
     }
 }
 
 #[tracing::instrument(level = "debug", skip(ws_conn))]
-pub fn listen_on_websocket(ws_conn: Arc<FlowyWebSocketConnect>) {
+pub fn listen_on_websocket(ws_conn: Arc<WebSocketConnect>) {
     let raw_web_socket = ws_conn.inner.clone();
     let _ = tokio::spawn(async move {
         let mut notify = ws_conn.inner.subscribe_connect_state().await;
@@ -136,7 +136,7 @@ pub fn listen_on_websocket(ws_conn: Arc<FlowyWebSocketConnect>) {
     });
 }
 
-async fn retry_connect(ws: Arc<dyn FlowyRawWebSocket>, count: usize) {
+async fn retry_connect(ws: Arc<dyn RawWebSocket>, count: usize) {
     match ws.reconnect(count).await {
         Ok(_) => {}
         Err(e) => {

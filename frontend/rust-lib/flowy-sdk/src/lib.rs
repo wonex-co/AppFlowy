@@ -13,7 +13,6 @@ use flowy_net::ClientServerConfiguration;
 use flowy_net::{
     entities::NetworkType,
     local_server::LocalServer,
-    ws::connection::{listen_on_websocket, FlowyWebSocketConnect},
 };
 use flowy_user::services::{notifier::UserStatus, UserSession, UserSessionConfig};
 use lib_dispatch::prelude::*;
@@ -23,11 +22,12 @@ pub use module::*;
 use std::{
     fmt,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 use tokio::sync::broadcast;
+use flowy_net::ws_connection::{listen_on_websocket, WebSocketConnect};
 
 static INIT_LOG: AtomicBool = AtomicBool::new(false);
 
@@ -104,7 +104,7 @@ pub struct FlowySDK {
     pub folder_manager: Arc<FolderManager>,
     pub grid_manager: Arc<GridManager>,
     pub dispatcher: Arc<EventDispatcher>,
-    pub ws_conn: Arc<FlowyWebSocketConnect>,
+    pub ws_conn: Arc<WebSocketConnect>,
     pub local_server: Option<Arc<LocalServer>>,
 }
 
@@ -190,7 +190,7 @@ impl FlowySDK {
 fn _start_listening(
     config: &FlowySDKConfig,
     dispatch: &EventDispatcher,
-    ws_conn: &Arc<FlowyWebSocketConnect>,
+    ws_conn: &Arc<WebSocketConnect>,
     user_session: &Arc<UserSession>,
     document_manager: &Arc<DocumentManager>,
     folder_manager: &Arc<FolderManager>,
@@ -227,22 +227,22 @@ fn _start_listening(
 
 fn mk_local_server(
     server_config: &ClientServerConfiguration,
-) -> (Option<Arc<LocalServer>>, Arc<FlowyWebSocketConnect>) {
+) -> (Option<Arc<LocalServer>>, Arc<WebSocketConnect>) {
     let ws_addr = server_config.ws_addr();
     if cfg!(feature = "http_sync") {
-        let ws_conn = Arc::new(FlowyWebSocketConnect::new(ws_addr));
+        let ws_conn = Arc::new(WebSocketConnect::new(ws_addr));
         (None, ws_conn)
     } else {
         let context = flowy_net::local_server::build_server(server_config);
         let local_ws = Arc::new(context.local_ws);
-        let ws_conn = Arc::new(FlowyWebSocketConnect::from_local(ws_addr, local_ws));
+        let ws_conn = Arc::new(WebSocketConnect::from_local(ws_addr, local_ws));
         (Some(Arc::new(context.local_server)), ws_conn)
     }
 }
 
 async fn _listen_user_status(
     config: FlowySDKConfig,
-    ws_conn: Arc<FlowyWebSocketConnect>,
+    ws_conn: Arc<WebSocketConnect>,
     mut subscribe: broadcast::Receiver<UserStatus>,
     document_manager: Arc<DocumentManager>,
     folder_manager: Arc<FolderManager>,
