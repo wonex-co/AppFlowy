@@ -17,10 +17,11 @@ use tracing::{event, Level};
 use flowy_error::{ErrorCode, FlowyError, FlowyResult};
 use lib_infra::util::timestamp;
 
-use crate::deps::{FolderCloudService, FolderUser};
+use crate::deps::{FolderCloudService, FolderUser, WorkspaceSnapshot};
 use crate::entities::{
   view_pb_with_child_views, CreateViewParams, CreateWorkspaceParams, DeletedViewPB,
   RepeatedTrashPB, RepeatedViewPB, RepeatedWorkspacePB, UpdateViewParams, ViewPB, WorkspacePB,
+  WorkspaceSnapshotPB,
 };
 use crate::notification::{
   send_notification, send_workspace_notification, send_workspace_setting_notification,
@@ -503,6 +504,16 @@ impl Folder2Manager {
       }
     }
     Ok(())
+  }
+
+  pub(crate) async fn get_snapshot(&self) -> WorkspaceSnapshotPB {
+    match self.cloud_service.get_workspace_snapshot().await {
+      Ok(snapshot) => {
+        //
+        WorkspaceSnapshotPB { views: vec![] }
+      },
+      Err(_) => WorkspaceSnapshotPB { views: vec![] },
+    }
   }
 
   pub(crate) async fn import(&self, import_data: ImportParams) -> FlowyResult<View> {

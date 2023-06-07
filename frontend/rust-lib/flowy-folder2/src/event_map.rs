@@ -33,6 +33,8 @@ pub fn init(folder: Arc<Folder2Manager>) -> AFPlugin {
     .event(FolderEvent::DeleteTrash, delete_trash_handler)
     .event(FolderEvent::RestoreAllTrash, restore_all_trash_handler)
     .event(FolderEvent::DeleteAllTrash, delete_all_trash_handler)
+    // Snapshot
+    .event(FolderEvent::GetSnapshot, get_snapshot_handler)
     .event(FolderEvent::ImportData, import_data_handler)
 }
 
@@ -122,4 +124,7 @@ pub enum FolderEvent {
 
   #[event(input = "ImportPB")]
   ImportData = 30,
+
+  #[event(output = "WorkspaceSnapshotPB")]
+  GetSnapshot = 40,
 }

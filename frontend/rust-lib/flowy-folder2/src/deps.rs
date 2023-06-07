@@ -1,4 +1,5 @@
 use appflowy_integrate::RocksCollabDB;
+use collab_folder::core::View;
 pub use collab_folder::core::Workspace;
 use flowy_error::FlowyError;
 use lib_infra::future::FutureResult;
@@ -14,4 +15,10 @@ pub trait FolderUser: Send + Sync {
 /// [FolderCloudService] represents the cloud service for folder.
 pub trait FolderCloudService: Send + Sync + 'static {
   fn create_workspace(&self, uid: i64, name: &str) -> FutureResult<Workspace, FlowyError>;
+  fn get_workspace_snapshot(&self) -> FutureResult<WorkspaceSnapshot, FlowyError>;
+}
+
+pub struct WorkspaceSnapshot {
+  pub workspace: Workspace,
+  pub views: Vec<View>,
 }

@@ -151,3 +151,9 @@ impl TryInto<UpdateWorkspaceParams> for UpdateWorkspacePayloadPB {
     })
   }
 }
+
+#[derive(Eq, PartialEq, ProtoBuf, Default, Debug, Clone)]
+pub struct WorkspaceSnapshotPB {
+  #[pb(index = 1)]
+  pub views: Vec<ViewPB>,
+}

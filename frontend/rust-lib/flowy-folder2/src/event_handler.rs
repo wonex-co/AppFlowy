@@ -8,7 +8,7 @@ use crate::entities::{
   CreateWorkspacePayloadPB, ImportPB, MoveViewParams, MoveViewPayloadPB, RepeatedTrashIdPB,
   RepeatedTrashPB, RepeatedViewIdPB, RepeatedViewPB, RepeatedWorkspacePB, TrashIdPB,
   UpdateViewParams, UpdateViewPayloadPB, ViewIdPB, ViewPB, WorkspaceIdPB, WorkspacePB,
-  WorkspaceSettingPB,
+  WorkspaceSettingPB, WorkspaceSnapshotPB,
 };
 use crate::manager::Folder2Manager;
 use crate::share::ImportParams;
@@ -219,4 +219,12 @@ pub(crate) async fn import_data_handler(
   let params: ImportParams = data.into_inner().try_into()?;
   folder.import(params).await?;
   Ok(())
+}
+
+#[tracing::instrument(level = "debug", skip(data, folder), err)]
+pub(crate) async fn get_snapshot_handler(
+  folder: AFPluginState<Arc<Folder2Manager>>,
+) -> DataResult<WorkspaceSnapshotPB, FlowyError> {
+  let snapshot = folder.get_snapshot().await;
+  data_result_ok(snapshot)
 }
