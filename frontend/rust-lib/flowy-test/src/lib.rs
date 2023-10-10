@@ -12,7 +12,7 @@ use collab::preclude::{merge_updates_v1, Update};
 use collab_document::blocks::DocumentData;
 use collab_document::document::Document;
 use nanoid::nanoid;
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use protobuf::ProtobufError;
 use tokio::sync::broadcast::{channel, Sender};
 use uuid::Uuid;
@@ -47,23 +47,27 @@ pub mod user_event;
 #[derive(Clone)]
 pub struct FlowyCoreTest {
   auth_type: Arc<RwLock<AuthTypePB>>,
+  // inner: MutexAppFlowyCore,
   inner: AppFlowyCore,
   #[allow(dead_code)]
   cleaner: Arc<Cleaner>,
   pub notification_sender: TestNotificationSender,
 }
 
-impl Default for FlowyCoreTest {
-  fn default() -> Self {
-    let temp_dir = temp_dir().join(nanoid!(6));
-    std::fs::create_dir_all(&temp_dir).unwrap();
-    Self::new_with_user_data_path(temp_dir, nanoid!(6))
+struct MutexAppFlowyCore(Arc<Mutex<AppFlowyCore>>);
+impl MutexAppFlowyCore {
+  fn new(core: AppFlowyCore) -> Self {
+    Self(Arc::new(Mutex::new(core)))
   }
 }
+unsafe impl Sync for MutexAppFlowyCore {}
+unsafe impl Send for MutexAppFlowyCore {}
 
 impl FlowyCoreTest {
-  pub fn new() -> Self {
-    Self::default()
+  pub async fn new() -> Self {
+    let temp_dir = temp_dir().join(nanoid!(6));
+    std::fs::create_dir_all(&temp_dir).unwrap();
+    Self::new_with_user_data_path(temp_dir, nanoid!(6)).await
   }
 
   pub async fn insert_document_text(&self, document_id: &str, text: &str, index: usize) {
@@ -105,7 +109,7 @@ impl FlowyCoreTest {
     merge_updates_v1(&updates).unwrap()
   }
 
-  pub fn new_with_user_data_path(path: PathBuf, name: String) -> Self {
+  pub async fn new_with_user_data_path(path: PathBuf, name: String) -> Self {
     let config = AppFlowyCoreConfig::new(path.to_str().unwrap(), name).log_filter(
       "trace",
       vec![
@@ -114,14 +118,23 @@ impl FlowyCoreTest {
       ],
     );
 
-    let inner = std::thread::spawn(|| AppFlowyCore::new(config))
-      .join()
-      .unwrap();
+    // let inner = AppFlowyCore::new(config);
+    // let inner = tokio::task::spawn_blocking(move || AppFlowyCore::new(config))
+    //   .await
+    //   .unwrap();
+    let inner = tokio::task::spawn_blocking(|| MutexAppFlowyCore::new(AppFlowyCore::new(config)))
+      .await
+      .unwrap()
+      .0
+      .lock()
+      .clone();
+
     let notification_sender = TestNotificationSender::new();
     let auth_type = Arc::new(RwLock::new(AuthTypePB::Local));
     register_notification_sender(notification_sender.clone());
     std::mem::forget(inner.dispatcher());
     Self {
+      // inner: MutexAppFlowyCore::new(inner),
       inner,
       auth_type,
       notification_sender,
@@ -158,7 +171,7 @@ impl FlowyCoreTest {
   }
 
   pub async fn new_with_guest_user() -> Self {
-    let test = Self::default();
+    let test = Self::new().await;
     test.sign_up_as_guest().await;
     test
   }
