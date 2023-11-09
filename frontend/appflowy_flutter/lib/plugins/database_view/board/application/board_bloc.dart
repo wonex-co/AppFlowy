@@ -14,6 +14,7 @@ import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:protobuf/protobuf.dart' hide FieldInfo;
 
 import '../../application/field/field_controller.dart';
 import '../../application/row/row_cache.dart';
@@ -23,11 +24,14 @@ import 'group_controller.dart';
 part 'board_bloc.freezed.dart';
 
 class BoardBloc extends Bloc<BoardEvent, BoardState> {
-  late final GroupBackendService groupBackendSvc;
   final DatabaseController databaseController;
-  late final AppFlowyBoardController boardController;
   final LinkedHashMap<String, GroupController> groupControllers =
       LinkedHashMap();
+  final List<GroupPB> groupList = [];
+
+  late final GroupBackendService groupBackendSvc;
+  late final AppFlowyBoardController boardController;
+
   GroupPB? ungroupedGroup;
 
   FieldController get fieldController => databaseController.fieldController;
@@ -82,10 +86,8 @@ class BoardBloc extends Bloc<BoardEvent, BoardState> {
               groupId: groupId,
               startRowId: startRowId,
             );
-            result.fold(
-              (_) {},
-              (err) => Log.error(err),
-            );
+
+            result.fold((_) {}, (err) => Log.error(err));
           },
           createHeaderRow: (String groupId) async {
             final result = await databaseController.createRow(
@@ -93,10 +95,7 @@ class BoardBloc extends Bloc<BoardEvent, BoardState> {
               fromBeginning: true,
             );
 
-            result.fold(
-              (_) {},
-              (err) => Log.error(err),
-            );
+            result.fold((_) {}, (err) => Log.error(err));
           },
           createGroup: (name) async {
             final result = await groupBackendSvc.createGroup(name: name);
@@ -167,8 +166,10 @@ class BoardBloc extends Bloc<BoardEvent, BoardState> {
               groupId: groupId,
               name: groupName,
             );
-
             emit(state.copyWith(isEditingHeader: false));
+          },
+          toggleGroupVisibility: (GroupPB group, bool isVisible) async {
+            await _toggleGroupVisibility(group, isVisible);
           },
         );
       },
@@ -178,11 +179,31 @@ class BoardBloc extends Bloc<BoardEvent, BoardState> {
   void _groupItemStartEditing(GroupPB group, RowMetaPB row, bool isEdit) {
     final fieldInfo = fieldController.getField(group.fieldId);
     if (fieldInfo == null) {
-      Log.warn("fieldInfo should not be null");
-      return;
+      return Log.warn("fieldInfo should not be null");
     }
 
     boardController.enableGroupDragging(!isEdit);
+  }
+
+  Future<void> _toggleGroupVisibility(GroupPB group, bool isVisible) async {
+    if (group.isDefault) {
+      final newLayoutSettings = state.layoutSettings!;
+      newLayoutSettings.freeze();
+
+      final newLayoutSetting = newLayoutSettings.rebuild(
+        (message) => message.hideUngroupedColumn = !isVisible,
+      );
+
+      return databaseController.updateLayoutSetting(
+        boardLayoutSetting: newLayoutSetting,
+      );
+    }
+
+    await groupBackendSvc.updateGroup(
+      fieldId: groupControllers.values.first.group.fieldId,
+      groupId: group.groupId,
+      visible: isVisible,
+    );
   }
 
   @override
@@ -197,23 +218,31 @@ class BoardBloc extends Bloc<BoardEvent, BoardState> {
     for (final controller in groupControllers.values) {
       controller.dispose();
     }
+
     groupControllers.clear();
     boardController.clear();
+    groupList.clear();
 
-    final ungroupedGroupIndex =
-        groups.indexWhere((group) => group.groupId == group.fieldId);
+    final ungroupedGroupIndex = groups.indexWhere((group) => group.isDefault);
 
     if (ungroupedGroupIndex != -1) {
       ungroupedGroup = groups[ungroupedGroupIndex];
       final group = groups.removeAt(ungroupedGroupIndex);
-      if (!(state.layoutSettings?.hideUngroupedColumn ?? false)) {
+      if (!(state.layoutSettings?.hideUngroupedColumn ?? false) &&
+          group.isVisible) {
         groups.add(group);
       }
     }
 
+    groupList.addAll(groups);
+
     boardController.addGroups(
       groups
-          .where((group) => fieldController.getField(group.fieldId) != null)
+          .where(
+            (group) =>
+                fieldController.getField(group.fieldId) != null &&
+                group.isVisible,
+          )
           .map((group) => initializeGroupData(group))
           .toList(),
     );
@@ -224,9 +253,7 @@ class BoardBloc extends Bloc<BoardEvent, BoardState> {
     }
   }
 
-  RowCache? getRowCache() {
-    return databaseController.rowCache;
-  }
+  RowCache? getRowCache() => databaseController.rowCache;
 
   void _startListening() {
     final onDatabaseChanged = DatabaseCallbacks(
@@ -238,9 +265,10 @@ class BoardBloc extends Bloc<BoardEvent, BoardState> {
     );
     final onLayoutSettingsChanged = DatabaseLayoutSettingCallbacks(
       onLayoutSettingsChanged: (layoutSettings) {
-        if (isClosed || !layoutSettings.hasBoard()) {
+        if (isClosed) {
           return;
         }
+
         if (ungroupedGroup != null) {
           if (layoutSettings.board.hideUngroupedColumn) {
             boardController.removeGroup(ungroupedGroup!.fieldId);
@@ -254,17 +282,26 @@ class BoardBloc extends Bloc<BoardEvent, BoardState> {
     );
     final onGroupChanged = GroupCallbacks(
       onGroupByField: (groups) {
-        if (isClosed) return;
+        if (isClosed) {
+          return;
+        }
+
         ungroupedGroup = null;
         initializeGroups(groups);
         add(BoardEvent.didReceiveGroups(groups));
       },
       onDeleteGroup: (groupIds) {
-        if (isClosed) return;
+        if (isClosed) {
+          return;
+        }
+
         boardController.removeGroups(groupIds);
       },
       onInsertGroup: (insertGroups) {
-        if (isClosed) return;
+        if (isClosed) {
+          return;
+        }
+
         final group = insertGroups.group;
         final newGroup = initializeGroupData(group);
         final controller = initializeGroupController(group);
@@ -272,11 +309,25 @@ class BoardBloc extends Bloc<BoardEvent, BoardState> {
         boardController.addGroup(newGroup);
       },
       onUpdateGroup: (updatedGroups) {
-        if (isClosed) return;
+        if (isClosed) {
+          return;
+        }
+
         for (final group in updatedGroups) {
+          // see if the column is already in the board
           final columnController =
               boardController.getGroupController(group.groupId);
-          columnController?.updateGroupName(group.groupName);
+
+          if (columnController != null) {
+            // remove the group or update its name
+            columnController.updateGroupName(group.groupName);
+            if (!group.isVisible) {
+              boardController.removeGroup(group.groupId);
+            }
+          } else {
+            final newGroup = initializeGroupData(group);
+            boardController.addGroup(newGroup);
+          }
         }
       },
     );
@@ -319,17 +370,17 @@ class BoardBloc extends Bloc<BoardEvent, BoardState> {
     final delegate = GroupControllerDelegateImpl(
       controller: boardController,
       fieldController: fieldController,
-      onNewColumnItem: (groupId, row, index) {
-        add(BoardEvent.didCreateRow(group, row, index));
-      },
+      onNewColumnItem: (groupId, row, index) =>
+          add(BoardEvent.didCreateRow(group, row, index)),
     );
+
     final controller = GroupController(
       viewId: state.viewId,
       group: group,
       delegate: delegate,
     );
-    controller.startListening();
-    return controller;
+
+    return controller..startListening();
   }
 
   AppFlowyGroupData initializeGroupData(GroupPB group) {
@@ -365,6 +416,10 @@ class BoardEvent with _$BoardEvent {
     RowMetaPB row,
   ) = _StartEditRow;
   const factory BoardEvent.endEditingRow(RowId rowId) = _EndEditRow;
+  const factory BoardEvent.toggleGroupVisibility(
+    GroupPB group,
+    bool isVisible,
+  ) = _ToggleGroupVisibility;
   const factory BoardEvent.didReceiveError(FlowyError error) = _DidReceiveError;
   const factory BoardEvent.didReceiveGridUpdate(
     DatabasePB grid,
@@ -383,12 +438,12 @@ class BoardState with _$BoardState {
     required Option<DatabasePB> grid,
     required List<String> groupIds,
     required bool isEditingHeader,
-    String? editingHeaderId,
     required bool isEditingRow,
-    BoardEditingRow? editingRow,
     required LoadingState loadingState,
     required Option<FlowyError> noneOrError,
     required BoardLayoutSettingPB? layoutSettings,
+    String? editingHeaderId,
+    BoardEditingRow? editingRow,
   }) = _BoardState;
 
   factory BoardState.initial(String viewId) => BoardState(
@@ -434,8 +489,7 @@ class GroupControllerDelegateImpl extends GroupControllerDelegate {
   void insertRow(GroupPB group, RowMetaPB row, int? index) {
     final fieldInfo = fieldController.getField(group.fieldId);
     if (fieldInfo == null) {
-      Log.warn("fieldInfo should not be null");
-      return;
+      return Log.warn("fieldInfo should not be null");
     }
 
     if (index != null) {
@@ -454,17 +508,16 @@ class GroupControllerDelegateImpl extends GroupControllerDelegate {
   }
 
   @override
-  void removeRow(GroupPB group, RowId rowId) {
-    controller.removeGroupItem(group.groupId, rowId.toString());
-  }
+  void removeRow(GroupPB group, RowId rowId) =>
+      controller.removeGroupItem(group.groupId, rowId.toString());
 
   @override
   void updateRow(GroupPB group, RowMetaPB row) {
     final fieldInfo = fieldController.getField(group.fieldId);
     if (fieldInfo == null) {
-      Log.warn("fieldInfo should not be null");
-      return;
+      return Log.warn("fieldInfo should not be null");
     }
+
     controller.updateGroupItem(
       group.groupId,
       GroupItem(
@@ -478,20 +531,17 @@ class GroupControllerDelegateImpl extends GroupControllerDelegate {
   void addNewRow(GroupPB group, RowMetaPB row, int? index) {
     final fieldInfo = fieldController.getField(group.fieldId);
     if (fieldInfo == null) {
-      Log.warn("fieldInfo should not be null");
-      return;
+      return Log.warn("fieldInfo should not be null");
     }
-    final item = GroupItem(
-      row: row,
-      fieldInfo: fieldInfo,
-      draggable: false,
-    );
+
+    final item = GroupItem(row: row, fieldInfo: fieldInfo, draggable: false);
 
     if (index != null) {
       controller.insertGroupItem(group.groupId, index, item);
     } else {
       controller.addGroupItem(group.groupId, item);
     }
+
     onNewColumnItem(group.groupId, row, index);
   }
 }
@@ -509,27 +559,26 @@ class BoardEditingRow {
 }
 
 class GroupData {
-  final GroupPB group;
-  final FieldInfo fieldInfo;
   GroupData({
     required this.group,
     required this.fieldInfo,
   });
 
-  CheckboxGroup? asCheckboxGroup() {
-    if (fieldType != FieldType.Checkbox) return null;
-    return CheckboxGroup(group);
-  }
+  final GroupPB group;
+  final FieldInfo fieldInfo;
+
+  CheckboxGroup? asCheckboxGroup() =>
+      fieldType == FieldType.Checkbox ? CheckboxGroup(group) : null;
 
   FieldType get fieldType => fieldInfo.fieldType;
 }
 
 class CheckboxGroup {
+  const CheckboxGroup(this.group);
+
   final GroupPB group;
 
-  CheckboxGroup(this.group);
-
-// Hardcode value: "Yes" that equal to the value defined in Rust
-// pub const CHECK: &str = "Yes";
+  // Hardcode value: "Yes" that equal to the value defined in Rust
+  // pub const CHECK: &str = "Yes";
   bool get isCheck => group.groupId == "Yes";
 }
