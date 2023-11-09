@@ -223,6 +223,9 @@ ThemeData getMobileThemeData(
         borderRadius: const BorderRadius.all(Radius.circular(6)),
       ),
     ),
+    textSelectionTheme: TextSelectionThemeData(
+      cursorColor: mobileColorTheme.onBackground,
+    ),
     colorScheme: mobileColorTheme,
     indicatorColor: Colors.blue,
     extensions: [
