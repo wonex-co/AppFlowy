@@ -1,0 +1,67 @@
+name: WEB-CI
+
+on:
+  pull_request:
+    branches:
+      - "main"
+    paths:
+      - ".github/workflows/web_ci.yaml"
+      - "!frontend/appflowy_flutter/**"
+      - "!frontend/appflowy_tauri/**"
+
+env:
+  CARGO_TERM_COLOR: always
+  NODE_VERSION: "18.16.0"
+  PNPM_VERSION: "8.5.0"
+  RUST_TOOLCHAIN: "1.75"
+
+
+jobs:
+  tauri-build:
+    if: github.event.pull_request.draft != true
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-latest]
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Cache Rust Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-dependencies-${{ runner.os }}
+          workspaces: |
+            frontend/rust-lib
+            frontend/appflowy_web/appflowy_wasm
+
+      - name: Cache Node.js dependencies
+        uses: actions/cache@v2
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}
+
+      - name: Cache node_modules
+        uses: actions/cache@v2
+        with:
+          path: frontend/appflowy_web/node_modules
+          key: node-modules-${{ runner.os }}
+
+      - name: Install Rust toolchain
+        id: rust_toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          override: true
+          profile: minimal
+
+      - name: Build
+        working-directory: frontend/appflowy_web
+        run: |
+          pnpm install
+          pnpm run wasm

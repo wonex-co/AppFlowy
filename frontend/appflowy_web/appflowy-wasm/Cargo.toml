@@ -10,7 +10,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 wasm-bindgen = { version = "0.2.89" }
 lazy_static = "1.4.0"
-lib-dispatch = { workspace = true, features = ["wasm_build"] }
+lib-dispatch = { workspace = true, features = ["single_thread"] }
 parking_lot.workspace = true
 tracing.workspace = true
 tracing-core = { version = "0.1.32" }

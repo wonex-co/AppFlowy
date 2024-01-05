@@ -1737,6 +1737,7 @@ dependencies = [
  "flowy-notification",
  "flowy-storage",
  "futures",
+ "getrandom 0.2.10",
  "indexmap 2.1.0",
  "lib-dispatch",
  "lib-infra",
