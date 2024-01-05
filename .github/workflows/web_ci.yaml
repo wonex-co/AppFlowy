@@ -6,15 +6,14 @@ on:
       - "main"
     paths:
       - ".github/workflows/web_ci.yaml"
-      - "!frontend/appflowy_flutter/**"
-      - "!frontend/appflowy_tauri/**"
+      - "frontend/rust-lib/**"
+      - "frontend/appflowy_web/**"
 
 env:
   CARGO_TERM_COLOR: always
   NODE_VERSION: "18.16.0"
   PNPM_VERSION: "8.5.0"
   RUST_TOOLCHAIN: "1.75"
-
 
 jobs:
   tauri-build:
