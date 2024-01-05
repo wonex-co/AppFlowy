@@ -16,7 +16,7 @@ env:
   RUST_TOOLCHAIN: "1.75"
 
 jobs:
-  tauri-build:
+  web-build:
     if: github.event.pull_request.draft != true
     strategy:
       fail-fast: false
