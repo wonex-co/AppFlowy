@@ -139,36 +139,35 @@ jobs:
         run: |
           docker compose pull
           docker compose up -d
-          sleep 10
+
+      - name: Checkout source code
+        uses: actions/checkout@v2
+
+      - name: Install flutter
+        id: flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "beta"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-make@${{ env.CARGO_MAKE_VERSION }}
+
+      - name: Install prerequisites
+        working-directory: frontend
+        run: |
+          sudo wget -qO /etc/apt/trusted.gpg.d/dart_linux_signing_key.asc https://dl-ssl.google.com/linux/linux_signing_key.pub
+          sudo wget -qO /etc/apt/sources.list.d/dart_stable.list https://storage.googleapis.com/download.dartlang.org/linux/debian/dart_stable.list
+          sudo apt-get update
+          sudo apt-get install -y dart curl build-essential libssl-dev clang cmake ninja-build pkg-config libgtk-3-dev keybinder-3.0 libnotify-dev
+        shell: bash
+
+      - name: Enable Flutter Desktop
+        run: |
+          flutter config --enable-linux-desktop
           docker ps -a
-
-     #- name: Checkout source code
-     #  uses: actions/checkout@v2
-
-     #- name: Install flutter
-     #  id: flutter
-     #  uses: subosito/flutter-action@v2
-     #  with:
-     #    channel: "beta"
-     #    flutter-version: ${{ env.FLUTTER_VERSION }}
-
-     #- uses: taiki-e/install-action@v2
-     #  with:
-     #    tool: cargo-make@${{ env.CARGO_MAKE_VERSION }}
-
-     #- name: Install prerequisites
-     #  working-directory: frontend
-     #  run: |
-     #    sudo wget -qO /etc/apt/trusted.gpg.d/dart_linux_signing_key.asc https://dl-ssl.google.com/linux/linux_signing_key.pub
-     #    sudo wget -qO /etc/apt/sources.list.d/dart_stable.list https://storage.googleapis.com/download.dartlang.org/linux/debian/dart_stable.list
-     #    sudo apt-get update
-     #    sudo apt-get install -y dart curl build-essential libssl-dev clang cmake ninja-build pkg-config libgtk-3-dev keybinder-3.0 libnotify-dev
-     #  shell: bash
-
-     #- name: Enable Flutter Desktop
-     #  run: |
-     #    flutter config --enable-linux-desktop
-     #  shell: bash
+        shell: bash
 
      #- uses: actions/download-artifact@v3
      #  with:
