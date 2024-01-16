@@ -234,7 +234,8 @@ jobs:
         working-directory: AppFlowy-Cloud
         run: |
           docker compose version
-          docker volume rm $(docker volume ls -q)
+          docker rm -f $(docker ps -a -q) || true
+          docker volume rm -f $(docker volume ls -q) || true
           docker compose pull
           docker compose up -d
           sleep 10
