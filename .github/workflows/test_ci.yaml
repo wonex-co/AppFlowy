@@ -139,6 +139,8 @@ jobs:
         run: |
           docker compose pull
           docker compose up -d
+          sleep 10
+          docker ps -a
 
       - name: Checkout source code
         uses: actions/checkout@v2
