@@ -234,7 +234,7 @@ jobs:
         working-directory: AppFlowy-Cloud
         run: |
           docker compose version
-          docker compose down -v --remove-orphans
+          docker volume rm $(docker volume ls -q)
           docker compose pull
           docker compose up -d
           sleep 10
