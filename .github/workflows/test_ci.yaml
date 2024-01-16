@@ -202,7 +202,7 @@ jobs:
 ##      shell: bash
 
   cloud_integration_test:
-    needs: [ prepare ]
+   #needs: [ prepare ]
     strategy:
       fail-fast: false
       matrix:
