@@ -170,18 +170,20 @@ impl AFPluginDispatcher {
       callback: Some(Box::new(callback)),
     };
 
-    let handle = dispatch.runtime.spawn(async move {
-      service.call(service_ctx).await.unwrap_or_else(|e| {
-        tracing::error!("Dispatch runtime error: {:?}", e);
-        InternalError::Other(format!("{:?}", e)).as_response()
-      })
-    });
-
     #[cfg(any(target_arch = "wasm32", feature = "local_set"))]
     {
-      let result = dispatch.runtime.block_on(handle);
+      let (tx, rx) = tokio::sync::oneshot::channel();
+      dispatch.runtime.block_on(async move {
+        let response = service.call(service_ctx).await.unwrap_or_else(|e| {
+          tracing::error!("Dispatch runtime error: {:?}", e);
+          InternalError::Other(format!("{:?}", e)).as_response()
+        });
+        let _ = tx.send(response);
+      });
+
       DispatchFuture {
         fut: Box::pin(async move {
+          let result = rx.await;
           result.unwrap_or_else(|e| {
             let msg = format!("EVENT_DISPATCH join error: {:?}", e);
             tracing::error!("{}", msg);
@@ -194,11 +196,16 @@ impl AFPluginDispatcher {
 
     #[cfg(all(not(target_arch = "wasm32"), not(feature = "local_set")))]
     {
-      let runtime = dispatch.runtime.clone();
+      let handle = dispatch.runtime.spawn(async move {
+        service.call(service_ctx).await.unwrap_or_else(|e| {
+          tracing::error!("Dispatch runtime error: {:?}", e);
+          InternalError::Other(format!("{:?}", e)).as_response()
+        })
+      });
+
       DispatchFuture {
         fut: Box::pin(async move {
-          let result = runtime.run_until(handle).await;
-          result.unwrap_or_else(|e| {
+          handle.await.unwrap_or_else(|e| {
             let msg = format!("EVENT_DISPATCH join error: {:?}", e);
             tracing::error!("{}", msg);
             let error = InternalError::JoinError(msg);
