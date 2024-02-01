@@ -928,10 +928,7 @@ impl FolderManager {
   }
 
   /// Returns a handler that implements the [FolderOperationHandler] trait
-  fn get_handler(
-    &self,
-    view_layout: &ViewLayout,
-  ) -> FlowyResult<Arc<dyn FolderOperationHandler + Send + Sync>> {
+  fn get_handler(&self, view_layout: &ViewLayout) -> FlowyResult<Arc<dyn FolderOperationHandler>> {
     match self.operation_handlers.get(view_layout) {
       None => Err(FlowyError::internal().with_context(format!(
         "Get data processor failed. Unknown layout type: {:?}",

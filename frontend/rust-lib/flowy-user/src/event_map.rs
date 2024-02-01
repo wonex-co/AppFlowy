@@ -7,6 +7,7 @@ use flowy_error::FlowyResult;
 use flowy_user_pub::cloud::UserCloudConfig;
 use flowy_user_pub::entities::*;
 use lib_dispatch::prelude::*;
+use lib_infra::async_trait;
 use lib_infra::future::{to_fut, Fut};
 
 use crate::event_handler::*;
@@ -193,79 +194,87 @@ pub enum UserEvent {
   ImportAppFlowyDataFolder = 41,
 }
 
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait UserStatusCallback: Send + Sync + 'static {
   /// When the [Authenticator] changed, this method will be called. Currently, the auth type
   /// will be changed when the user sign in or sign up.
   fn authenticator_did_changed(&self, _authenticator: Authenticator) {}
   /// This will be called after the application launches if the user is already signed in.
   /// If the user is not signed in, this method will not be called
-  fn did_init(
+  async fn did_init(
     &self,
     user_id: i64,
     user_authenticator: &Authenticator,
     cloud_config: &Option<UserCloudConfig>,
     user_workspace: &UserWorkspace,
     device_id: &str,
-  ) -> Fut<FlowyResult<()>>;
+  ) -> FlowyResult<()>;
   /// Will be called after the user signed in.
-  fn did_sign_in(
+  async fn did_sign_in(
     &self,
     user_id: i64,
     user_workspace: &UserWorkspace,
     device_id: &str,
-  ) -> Fut<FlowyResult<()>>;
+  ) -> FlowyResult<()>;
   /// Will be called after the user signed up.
-  fn did_sign_up(
+  async fn did_sign_up(
     &self,
     is_new_user: bool,
     user_profile: &UserProfile,
     user_workspace: &UserWorkspace,
     device_id: &str,
-  ) -> Fut<FlowyResult<()>>;
+  ) -> FlowyResult<()>;
 
-  fn did_expired(&self, token: &str, user_id: i64) -> Fut<FlowyResult<()>>;
-  fn open_workspace(&self, user_id: i64, user_workspace: &UserWorkspace) -> Fut<FlowyResult<()>>;
+  async fn did_expired(&self, token: &str, user_id: i64) -> FlowyResult<()>;
+  async fn open_workspace(&self, user_id: i64, user_workspace: &UserWorkspace) -> FlowyResult<()>;
   fn did_update_network(&self, _reachable: bool) {}
 }
 
 /// Acts as a placeholder [UserStatusCallback] for the user session, but does not perform any function
 pub(crate) struct DefaultUserStatusCallback;
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl UserStatusCallback for DefaultUserStatusCallback {
-  fn did_init(
+  async fn did_init(
     &self,
     _user_id: i64,
     _authenticator: &Authenticator,
     _cloud_config: &Option<UserCloudConfig>,
     _user_workspace: &UserWorkspace,
     _device_id: &str,
-  ) -> Fut<FlowyResult<()>> {
-    to_fut(async { Ok(()) })
+  ) -> FlowyResult<()> {
+    Ok(())
   }
 
-  fn did_sign_in(
+  async fn did_sign_in(
     &self,
     _user_id: i64,
     _user_workspace: &UserWorkspace,
     _device_id: &str,
-  ) -> Fut<FlowyResult<()>> {
-    to_fut(async { Ok(()) })
+  ) -> FlowyResult<()> {
+    Ok(())
   }
 
-  fn did_sign_up(
+  async fn did_sign_up(
     &self,
     _is_new_user: bool,
     _user_profile: &UserProfile,
     _user_workspace: &UserWorkspace,
     _device_id: &str,
-  ) -> Fut<FlowyResult<()>> {
-    to_fut(async { Ok(()) })
+  ) -> FlowyResult<()> {
+    Ok(())
   }
 
-  fn did_expired(&self, _token: &str, _user_id: i64) -> Fut<FlowyResult<()>> {
-    to_fut(async { Ok(()) })
+  async fn did_expired(&self, _token: &str, _user_id: i64) -> FlowyResult<()> {
+    Ok(())
   }
 
-  fn open_workspace(&self, _user_id: i64, _user_workspace: &UserWorkspace) -> Fut<FlowyResult<()>> {
-    to_fut(async { Ok(()) })
+  async fn open_workspace(
+    &self,
+    _user_id: i64,
+    _user_workspace: &UserWorkspace,
+  ) -> FlowyResult<()> {
+    Ok(())
   }
 }

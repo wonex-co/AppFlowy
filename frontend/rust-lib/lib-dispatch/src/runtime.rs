@@ -90,6 +90,7 @@ impl AFPluginRuntime {
 pub fn default_tokio_runtime() -> io::Result<Runtime> {
   runtime::Builder::new_current_thread()
     .thread_name("dispatch-rt-st")
+    .worker_threads(6)
     .build()
 }
 

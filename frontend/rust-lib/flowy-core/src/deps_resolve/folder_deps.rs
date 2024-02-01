@@ -24,6 +24,7 @@ use flowy_user::services::authenticate_user::AuthenticateUser;
 
 use crate::integrate::server::ServerProvider;
 use lib_dispatch::prelude::ToBytes;
+use lib_infra::async_trait;
 use lib_infra::async_trait::async_trait;
 use lib_infra::future::FutureResult;
 
@@ -94,71 +95,59 @@ impl FolderUser for FolderUserImpl {
 }
 
 struct DocumentFolderOperation(Arc<DocumentManager>);
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl FolderOperationHandler for DocumentFolderOperation {
-  fn create_workspace_view(
+  async fn create_workspace_view(
     &self,
     uid: i64,
     workspace_view_builder: Arc<RwLock<WorkspaceViewBuilder>>,
-  ) -> FutureResult<(), FlowyError> {
-    let manager = self.0.clone();
-    FutureResult::new(async move {
-      let mut write_guard = workspace_view_builder.write().await;
+  ) -> Result<(), FlowyError> {
+    let mut write_guard = workspace_view_builder.write().await;
 
-      // Create a view named "Getting started" with an icon ⭐️ and the built-in README data.
-      // Don't modify this code unless you know what you are doing.
-      write_guard
-        .with_view_builder(|view_builder| async {
-          let view = view_builder
-            .with_name("Getting started")
-            .with_icon("⭐️")
-            .build();
-          // create a empty document
-          let json_str = include_str!("../../assets/read_me.json");
-          let document_pb = JsonToDocumentParser::json_str_to_document(json_str).unwrap();
-          manager
-            .create_document(uid, &view.parent_view.id, Some(document_pb.into()))
-            .await
-            .unwrap();
-          view
-        })
-        .await;
-      Ok(())
-    })
+    // Create a view named "Getting started" with an icon ⭐️ and the built-in README data.
+    // Don't modify this code unless you know what you are doing.
+    write_guard
+      .with_view_builder(|view_builder| async {
+        let view = view_builder
+          .with_name("Getting started")
+          .with_icon("⭐️")
+          .build();
+        // create a empty document
+        let json_str = include_str!("../../assets/read_me.json");
+        let document_pb = JsonToDocumentParser::json_str_to_document(json_str).unwrap();
+        self
+          .0
+          .create_document(uid, &view.parent_view.id, Some(document_pb.into()))
+          .await
+          .unwrap();
+        view
+      })
+      .await;
+    Ok(())
   }
 
   /// Close the document view.
-  fn close_view(&self, view_id: &str) -> FutureResult<(), FlowyError> {
-    let manager = self.0.clone();
-    let view_id = view_id.to_string();
-    FutureResult::new(async move {
-      manager.close_document(&view_id).await?;
-      Ok(())
-    })
+  async fn close_view(&self, view_id: &str) -> Result<(), FlowyError> {
+    self.0.close_document(&view_id).await?;
+    Ok(())
   }
 
-  fn delete_view(&self, view_id: &str) -> FutureResult<(), FlowyError> {
-    let manager = self.0.clone();
-    let view_id = view_id.to_string();
-    FutureResult::new(async move {
-      match manager.delete_document(&view_id).await {
-        Ok(_) => tracing::trace!("Delete document: {}", view_id),
-        Err(e) => tracing::error!("🔴delete document failed: {}", e),
-      }
-      Ok(())
-    })
+  async fn delete_view(&self, view_id: &str) -> Result<(), FlowyError> {
+    match self.0.delete_document(&view_id).await {
+      Ok(_) => tracing::trace!("Delete document: {}", view_id),
+      Err(e) => tracing::error!("🔴delete document failed: {}", e),
+    }
+    Ok(())
   }
 
-  fn duplicate_view(&self, view_id: &str) -> FutureResult<Bytes, FlowyError> {
-    let manager = self.0.clone();
-    let view_id = view_id.to_string();
-    FutureResult::new(async move {
-      let data: DocumentDataPB = manager.get_document_data(&view_id).await?.into();
-      let data_bytes = data.into_bytes().map_err(|_| FlowyError::invalid_data())?;
-      Ok(data_bytes)
-    })
+  async fn duplicate_view(&self, view_id: &str) -> Result<Bytes, FlowyError> {
+    let data: DocumentDataPB = self.0.get_document_data(&view_id).await?.into();
+    let data_bytes = data.into_bytes().map_err(|_| FlowyError::invalid_data())?;
+    Ok(data_bytes)
   }
 
-  fn create_view_with_view_data(
+  async fn create_view_with_view_data(
     &self,
     user_id: i64,
     view_id: &str,
@@ -166,110 +155,94 @@ impl FolderOperationHandler for DocumentFolderOperation {
     data: Vec<u8>,
     layout: ViewLayout,
     _meta: HashMap<String, String>,
-  ) -> FutureResult<(), FlowyError> {
+  ) -> Result<(), FlowyError> {
     debug_assert_eq!(layout, ViewLayout::Document);
-    let view_id = view_id.to_string();
-    let manager = self.0.clone();
-    FutureResult::new(async move {
-      let data = DocumentDataPB::try_from(Bytes::from(data))?;
-      manager
-        .create_document(user_id, &view_id, Some(data.into()))
-        .await?;
-      Ok(())
-    })
+    let data = DocumentDataPB::try_from(Bytes::from(data))?;
+    self
+      .0
+      .create_document(user_id, &view_id, Some(data.into()))
+      .await?;
+    Ok(())
   }
 
   /// Create a view with built-in data.
-  fn create_built_in_view(
+  async fn create_built_in_view(
     &self,
     user_id: i64,
     view_id: &str,
     _name: &str,
     layout: ViewLayout,
-  ) -> FutureResult<(), FlowyError> {
+  ) -> Result<(), FlowyError> {
     debug_assert_eq!(layout, ViewLayout::Document);
-    let view_id = view_id.to_string();
-    let manager = self.0.clone();
-    FutureResult::new(async move {
-      match manager.create_document(user_id, &view_id, None).await {
-        Ok(_) => Ok(()),
-        Err(err) => {
-          if err.is_already_exists() {
-            Ok(())
-          } else {
-            Err(err)
-          }
-        },
-      }
-    })
+    match self.0.create_document(user_id, &view_id, None).await {
+      Ok(_) => Ok(()),
+      Err(err) => {
+        if err.is_already_exists() {
+          Ok(())
+        } else {
+          Err(err)
+        }
+      },
+    }
   }
 
-  fn import_from_bytes(
+  async fn import_from_bytes(
     &self,
     uid: i64,
     view_id: &str,
     _name: &str,
     _import_type: ImportType,
     bytes: Vec<u8>,
-  ) -> FutureResult<(), FlowyError> {
-    let view_id = view_id.to_string();
-    let manager = self.0.clone();
-    FutureResult::new(async move {
-      let data = DocumentDataPB::try_from(Bytes::from(bytes))?;
-      manager
-        .create_document(uid, &view_id, Some(data.into()))
-        .await?;
-      Ok(())
-    })
+  ) -> Result<(), FlowyError> {
+    let data = DocumentDataPB::try_from(Bytes::from(bytes))?;
+    self
+      .0
+      .create_document(uid, &view_id, Some(data.into()))
+      .await?;
+    Ok(())
   }
 
   // will implement soon
-  fn import_from_file_path(
+  async fn import_from_file_path(
     &self,
     _view_id: &str,
     _name: &str,
     _path: String,
-  ) -> FutureResult<(), FlowyError> {
-    FutureResult::new(async move { Ok(()) })
+  ) -> Result<(), FlowyError> {
+    Ok(())
+  }
+
+  async fn did_update_view(&self, _old: &View, _new: &View) -> Result<(), FlowyError> {
+    Ok(())
   }
 }
 
 struct DatabaseFolderOperation(Arc<DatabaseManager>);
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl FolderOperationHandler for DatabaseFolderOperation {
-  fn close_view(&self, view_id: &str) -> FutureResult<(), FlowyError> {
-    let database_manager = self.0.clone();
-    let view_id = view_id.to_string();
-    FutureResult::new(async move {
-      database_manager.close_database_view(view_id).await?;
-      Ok(())
-    })
+  async fn close_view(&self, view_id: &str) -> Result<(), FlowyError> {
+    self.0.close_database_view(view_id).await?;
+    Ok(())
   }
 
-  fn delete_view(&self, view_id: &str) -> FutureResult<(), FlowyError> {
-    let database_manager = self.0.clone();
-    let view_id = view_id.to_string();
-    FutureResult::new(async move {
-      match database_manager.delete_database_view(&view_id).await {
-        Ok(_) => tracing::trace!("Delete database view: {}", view_id),
-        Err(e) => tracing::error!("🔴delete database failed: {}", e),
-      }
-      Ok(())
-    })
+  async fn delete_view(&self, view_id: &str) -> Result<(), FlowyError> {
+    match self.0.delete_database_view(view_id).await {
+      Ok(_) => tracing::trace!("Delete database view: {}", view_id),
+      Err(e) => tracing::error!("🔴delete database failed: {}", e),
+    }
+    Ok(())
   }
 
-  fn duplicate_view(&self, view_id: &str) -> FutureResult<Bytes, FlowyError> {
-    let database_manager = self.0.clone();
-    let view_id = view_id.to_owned();
-    FutureResult::new(async move {
-      let delta_bytes = database_manager.duplicate_database(&view_id).await?;
-      Ok(Bytes::from(delta_bytes))
-    })
+  async fn duplicate_view(&self, view_id: &str) -> Result<Bytes, FlowyError> {
+    let delta_bytes = self.0.duplicate_database(&view_id).await?;
+    Ok(Bytes::from(delta_bytes))
   }
 
   /// Create a database view with duplicated data.
   /// If the ext contains the {"database_id": "xx"}, then it will link
   /// to the existing database.
-  fn create_view_with_view_data(
+  async fn create_view_with_view_data(
     &self,
     _user_id: i64,
     view_id: &str,
@@ -277,30 +250,27 @@ impl FolderOperationHandler for DatabaseFolderOperation {
     data: Vec<u8>,
     layout: ViewLayout,
     meta: HashMap<String, String>,
-  ) -> FutureResult<(), FlowyError> {
+  ) -> Result<(), FlowyError> {
     match CreateDatabaseExtParams::from_map(meta) {
       None => {
-        let database_manager = self.0.clone();
-        let view_id = view_id.to_string();
-        FutureResult::new(async move {
-          database_manager
-            .create_database_with_database_data(&view_id, data)
-            .await?;
-          Ok(())
-        })
+        self
+          .0
+          .create_database_with_database_data(&view_id, data)
+          .await?;
+        Ok(())
       },
       Some(params) => {
-        let database_manager = self.0.clone();
         let layout = layout_type_from_view_layout(layout.into());
-        let name = name.to_string();
-        let database_view_id = view_id.to_string();
-
-        FutureResult::new(async move {
-          database_manager
-            .create_linked_view(name, layout.into(), params.database_id, database_view_id)
-            .await?;
-          Ok(())
-        })
+        self
+          .0
+          .create_linked_view(
+            name.to_string(),
+            layout.into(),
+            params.database_id,
+            view_id.to_string(),
+          )
+          .await?;
+        Ok(())
       },
     }
   }
@@ -309,104 +279,87 @@ impl FolderOperationHandler for DatabaseFolderOperation {
   /// If the ext contains the {"database_id": "xx"}, then it will link to
   /// the existing database. The data of the database will be shared within
   /// these references views.
-  fn create_built_in_view(
+  async fn create_built_in_view(
     &self,
     _user_id: i64,
     view_id: &str,
     name: &str,
     layout: ViewLayout,
-  ) -> FutureResult<(), FlowyError> {
-    let name = name.to_string();
-    let database_manager = self.0.clone();
+  ) -> Result<(), FlowyError> {
     let data = match layout {
-      ViewLayout::Grid => make_default_grid(view_id, &name),
-      ViewLayout::Board => make_default_board(view_id, &name),
-      ViewLayout::Calendar => make_default_calendar(view_id, &name),
+      ViewLayout::Grid => make_default_grid(view_id, name),
+      ViewLayout::Board => make_default_board(view_id, name),
+      ViewLayout::Calendar => make_default_calendar(view_id, name),
       ViewLayout::Document => {
-        return FutureResult::new(async move {
-          Err(FlowyError::internal().with_context(format!("Can't handle {:?} layout type", layout)))
-        });
+        return Err(
+          FlowyError::internal().with_context(format!("Can't handle {:?} layout type", layout)),
+        );
       },
     };
-    FutureResult::new(async move {
-      let result = database_manager.create_database_with_params(data).await;
-      match result {
-        Ok(_) => Ok(()),
-        Err(err) => {
-          if err.is_already_exists() {
-            Ok(())
-          } else {
-            Err(err)
-          }
-        },
-      }
-    })
+    let result = self.0.create_database_with_params(data).await;
+    match result {
+      Ok(_) => Ok(()),
+      Err(err) => {
+        if err.is_already_exists() {
+          Ok(())
+        } else {
+          Err(err)
+        }
+      },
+    }
   }
 
-  fn import_from_bytes(
+  async fn import_from_bytes(
     &self,
     _uid: i64,
     view_id: &str,
     _name: &str,
     import_type: ImportType,
     bytes: Vec<u8>,
-  ) -> FutureResult<(), FlowyError> {
-    let database_manager = self.0.clone();
-    let view_id = view_id.to_string();
+  ) -> Result<(), FlowyError> {
     let format = match import_type {
       ImportType::CSV => CSVFormat::Original,
       ImportType::HistoryDatabase => CSVFormat::META,
       ImportType::RawDatabase => CSVFormat::META,
       _ => CSVFormat::Original,
     };
-    FutureResult::new(async move {
-      let content =
-        String::from_utf8(bytes).map_err(|err| FlowyError::internal().with_context(err))?;
-      database_manager
-        .import_csv(view_id, content, format)
-        .await?;
-      Ok(())
-    })
+    let content =
+      String::from_utf8(bytes).map_err(|err| FlowyError::internal().with_context(err))?;
+    self
+      .0
+      .import_csv(view_id.to_string(), content, format)
+      .await?;
+    Ok(())
   }
 
-  fn import_from_file_path(
+  async fn import_from_file_path(
     &self,
     _view_id: &str,
     _name: &str,
     path: String,
-  ) -> FutureResult<(), FlowyError> {
-    let database_manager = self.0.clone();
-    FutureResult::new(async move {
-      database_manager
-        .import_csv_from_file(path, CSVFormat::META)
-        .await?;
-      Ok(())
-    })
+  ) -> Result<(), FlowyError> {
+    self.0.import_csv_from_file(path, CSVFormat::META).await?;
+    Ok(())
   }
 
-  fn did_update_view(&self, old: &View, new: &View) -> FutureResult<(), FlowyError> {
+  async fn did_update_view(&self, old: &View, new: &View) -> Result<(), FlowyError> {
     let database_layout = match new.layout {
       ViewLayout::Document => {
-        return FutureResult::new(async {
-          Err(FlowyError::internal().with_context("Can't handle document layout type"))
-        });
+        return Err(FlowyError::internal().with_context("Can't handle document layout type"));
       },
       ViewLayout::Grid => DatabaseLayoutPB::Grid,
       ViewLayout::Board => DatabaseLayoutPB::Board,
       ViewLayout::Calendar => DatabaseLayoutPB::Calendar,
     };
 
-    let database_manager = self.0.clone();
-    let view_id = new.id.clone();
     if old.layout != new.layout {
-      FutureResult::new(async move {
-        database_manager
-          .update_database_layout(&view_id, database_layout)
-          .await?;
-        Ok(())
-      })
+      self
+        .0
+        .update_database_layout(&new.id, database_layout)
+        .await?;
+      Ok(())
     } else {
-      FutureResult::new(async move { Ok(()) })
+      Ok(())
     }
   }
 }

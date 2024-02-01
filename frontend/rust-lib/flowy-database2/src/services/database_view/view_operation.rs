@@ -7,8 +7,7 @@ use collab_database::rows::{Row, RowCell, RowDetail, RowId};
 use collab_database::views::{DatabaseLayout, DatabaseView, LayoutSetting};
 use tokio::sync::RwLock;
 
-use flowy_error::FlowyError;
-use lib_infra::future::{Fut, FutureResult};
+use flowy_error::FlowyResult;
 use lib_infra::priority_task::TaskDispatcher;
 
 use crate::entities::{FieldType, FieldVisibility};
@@ -19,48 +18,50 @@ use crate::services::group::GroupSetting;
 use crate::services::sort::Sort;
 
 /// Defines the operation that can be performed on a database view
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait DatabaseViewOperation: Send + Sync + 'static {
   /// Get the database that the view belongs to
   fn get_database(&self) -> Arc<MutexDatabase>;
 
   /// Get the view of the database with the view_id
-  fn get_view(&self, view_id: &str) -> Fut<Option<DatabaseView>>;
+  async fn get_view(&self, view_id: &str) -> Option<DatabaseView>;
   /// If the field_ids is None, then it will return all the field revisions
-  fn get_fields(&self, view_id: &str, field_ids: Option<Vec<String>>) -> Fut<Vec<Arc<Field>>>;
+  async fn get_fields(&self, view_id: &str, field_ids: Option<Vec<String>>) -> Vec<Arc<Field>>;
 
   /// Returns the field with the field_id
   fn get_field(&self, field_id: &str) -> Option<Field>;
 
-  fn create_field(
+  async fn create_field(
     &self,
     view_id: &str,
     name: &str,
     field_type: FieldType,
     type_option_data: TypeOptionData,
-  ) -> Fut<Field>;
+  ) -> Field;
 
-  fn update_field(
+  async fn update_field(
     &self,
     type_option_data: TypeOptionData,
     old_field: Field,
-  ) -> FutureResult<(), FlowyError>;
+  ) -> FlowyResult<()>;
 
-  fn get_primary_field(&self) -> Fut<Option<Arc<Field>>>;
+  async fn get_primary_field(&self) -> Option<Arc<Field>>;
 
   /// Returns the index of the row with row_id
-  fn index_of_row(&self, view_id: &str, row_id: &RowId) -> Fut<Option<usize>>;
+  async fn index_of_row(&self, view_id: &str, row_id: &RowId) -> Option<usize>;
 
   /// Returns the `index` and `RowRevision` with row_id
-  fn get_row(&self, view_id: &str, row_id: &RowId) -> Fut<Option<(usize, Arc<RowDetail>)>>;
+  async fn get_row(&self, view_id: &str, row_id: &RowId) -> Option<(usize, Arc<RowDetail>)>;
 
   /// Returns all the rows in the view
-  fn get_rows(&self, view_id: &str) -> Fut<Vec<Arc<RowDetail>>>;
+  async fn get_rows(&self, view_id: &str) -> Vec<Arc<RowDetail>>;
 
   fn remove_row(&self, row_id: &RowId) -> Option<Row>;
 
-  fn get_cells_for_field(&self, view_id: &str, field_id: &str) -> Fut<Vec<Arc<RowCell>>>;
+  async fn get_cells_for_field(&self, view_id: &str, field_id: &str) -> Vec<Arc<RowCell>>;
 
-  fn get_cell_in_row(&self, field_id: &str, row_id: &RowId) -> Fut<Arc<RowCell>>;
+  async fn get_cell_in_row(&self, field_id: &str, row_id: &RowId) -> Arc<RowCell>;
 
   /// Return the database layout type for the view with given view_id
   /// The default layout type is [DatabaseLayout::Grid]

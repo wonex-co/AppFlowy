@@ -21,13 +21,14 @@ use crate::services::field::{default_order, TypeOptionCellExt};
 use crate::services::sort::{
   ReorderAllRowsResult, ReorderSingleRowResult, Sort, SortChangeset, SortCondition,
 };
-
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait SortDelegate: Send + Sync {
-  fn get_sort(&self, view_id: &str, sort_id: &str) -> Fut<Option<Arc<Sort>>>;
+  async fn get_sort(&self, view_id: &str, sort_id: &str) -> Option<Arc<Sort>>;
   /// Returns all the rows after applying grid's filter
-  fn get_rows(&self, view_id: &str) -> Fut<Vec<Arc<RowDetail>>>;
+  async fn get_rows(&self, view_id: &str) -> Vec<Arc<RowDetail>>;
   fn get_field(&self, field_id: &str) -> Option<Field>;
-  fn get_fields(&self, view_id: &str, field_ids: Option<Vec<String>>) -> Fut<Vec<Arc<Field>>>;
+  async fn get_fields(&self, view_id: &str, field_ids: Option<Vec<String>>) -> Vec<Arc<Field>>;
 }
 
 pub struct SortController {

@@ -19,12 +19,14 @@ use crate::services::database_view::{DatabaseViewChanged, DatabaseViewChangedNot
 use crate::services::field::*;
 use crate::services::filter::{Filter, FilterChangeset, FilterResult, FilterResultNotification};
 
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 pub trait FilterDelegate: Send + Sync + 'static {
-  fn get_filter(&self, view_id: &str, filter_id: &str) -> Fut<Option<Arc<Filter>>>;
+  async fn get_filter(&self, view_id: &str, filter_id: &str) -> Option<Arc<Filter>>;
   fn get_field(&self, field_id: &str) -> Option<Field>;
-  fn get_fields(&self, view_id: &str, field_ids: Option<Vec<String>>) -> Fut<Vec<Arc<Field>>>;
-  fn get_rows(&self, view_id: &str) -> Fut<Vec<Arc<RowDetail>>>;
-  fn get_row(&self, view_id: &str, rows_id: &RowId) -> Fut<Option<(usize, Arc<RowDetail>)>>;
+  async fn get_fields(&self, view_id: &str, field_ids: Option<Vec<String>>) -> Vec<Arc<Field>>;
+  async fn get_rows(&self, view_id: &str) -> Vec<Arc<RowDetail>>;
+  async fn get_row(&self, view_id: &str, rows_id: &RowId) -> Option<(usize, Arc<RowDetail>)>;
 }
 
 pub trait FromFilterString {

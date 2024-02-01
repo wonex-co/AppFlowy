@@ -53,28 +53,24 @@ struct DatabaseViewSortDelegateImpl {
   filter_controller: Arc<FilterController>,
 }
 
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl SortDelegate for DatabaseViewSortDelegateImpl {
-  fn get_sort(&self, view_id: &str, sort_id: &str) -> Fut<Option<Arc<Sort>>> {
-    let sort = self.delegate.get_sort(view_id, sort_id).map(Arc::new);
-    to_fut(async move { sort })
+  async fn get_sort(&self, view_id: &str, sort_id: &str) -> Option<Arc<Sort>> {
+    self.delegate.get_sort(view_id, sort_id).map(Arc::new)
   }
 
-  fn get_rows(&self, view_id: &str) -> Fut<Vec<Arc<RowDetail>>> {
-    let view_id = view_id.to_string();
-    let delegate = self.delegate.clone();
-    let filter_controller = self.filter_controller.clone();
-    to_fut(async move {
-      let mut row_details = delegate.get_rows(&view_id).await;
-      filter_controller.filter_rows(&mut row_details).await;
-      row_details
-    })
+  async fn get_rows(&self, view_id: &str) -> Vec<Arc<RowDetail>> {
+    let mut row_details = self.delegate.get_rows(&view_id).await;
+    self.filter_controller.filter_rows(&mut row_details).await;
+    row_details
   }
 
   fn get_field(&self, field_id: &str) -> Option<Field> {
     self.delegate.get_field(field_id)
   }
 
-  fn get_fields(&self, view_id: &str, field_ids: Option<Vec<String>>) -> Fut<Vec<Arc<Field>>> {
-    self.delegate.get_fields(view_id, field_ids)
+  async fn get_fields(&self, view_id: &str, field_ids: Option<Vec<String>>) -> Vec<Arc<Field>> {
+    self.delegate.get_fields(view_id, field_ids).await
   }
 }

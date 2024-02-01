@@ -81,23 +81,23 @@ pub async fn new_group_controller(
 
 pub(crate) struct GroupSettingReaderImpl(pub Arc<dyn DatabaseViewOperation>);
 
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl GroupSettingReader for GroupSettingReaderImpl {
-  fn get_group_setting(&self, view_id: &str) -> Fut<Option<Arc<GroupSetting>>> {
+  async fn get_group_setting(&self, view_id: &str) -> Option<Arc<GroupSetting>> {
     let mut settings = self.0.get_group_setting(view_id);
-    to_fut(async move {
-      if settings.is_empty() {
-        None
-      } else {
-        Some(Arc::new(settings.remove(0)))
-      }
-    })
+    if settings.is_empty() {
+      None
+    } else {
+      Some(Arc::new(settings.remove(0)))
+    }
   }
 
-  fn get_configuration_cells(&self, view_id: &str, field_id: &str) -> Fut<Vec<RowSingleCellData>> {
+  async fn get_configuration_cells(&self, view_id: &str, field_id: &str) -> Vec<RowSingleCellData> {
     let field_id = field_id.to_owned();
     let view_id = view_id.to_owned();
     let delegate = self.0.clone();
-    to_fut(async move { get_cells_for_field(delegate, &view_id, &field_id).await })
+    get_cells_for_field(delegate, &view_id, &field_id).await
   }
 }
 
@@ -155,10 +155,16 @@ pub(crate) async fn get_cells_for_field(
 }
 
 struct GroupSettingWriterImpl(Arc<dyn DatabaseViewOperation>);
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl GroupSettingWriter for GroupSettingWriterImpl {
-  fn save_configuration(&self, view_id: &str, group_setting: GroupSetting) -> Fut<FlowyResult<()>> {
+  async fn save_configuration(
+    &self,
+    view_id: &str,
+    group_setting: GroupSetting,
+  ) -> FlowyResult<()> {
     self.0.insert_group_setting(view_id, group_setting);
-    to_fut(async move { Ok(()) })
+    Ok(())
   }
 }
 

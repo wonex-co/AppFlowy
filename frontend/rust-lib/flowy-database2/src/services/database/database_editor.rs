@@ -1252,32 +1252,33 @@ struct DatabaseViewOperationImpl {
   editor_by_view_id: Arc<RwLock<EditorByViewId>>,
 }
 
+#[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
 impl DatabaseViewOperation for DatabaseViewOperationImpl {
   fn get_database(&self) -> Arc<MutexDatabase> {
     self.database.clone()
   }
 
-  fn get_view(&self, view_id: &str) -> Fut<Option<DatabaseView>> {
-    let view = self.database.lock().get_view(view_id);
-    to_fut(async move { view })
+  async fn get_view(&self, view_id: &str) -> Option<DatabaseView> {
+    self.database.lock().get_view(view_id)
   }
 
-  fn get_fields(&self, view_id: &str, field_ids: Option<Vec<String>>) -> Fut<Vec<Arc<Field>>> {
+  async fn get_fields(&self, view_id: &str, field_ids: Option<Vec<String>>) -> Vec<Arc<Field>> {
     let fields = self.database.lock().get_fields_in_view(view_id, field_ids);
-    to_fut(async move { fields.into_iter().map(Arc::new).collect() })
+    fields.into_iter().map(Arc::new).collect()
   }
 
   fn get_field(&self, field_id: &str) -> Option<Field> {
     self.database.lock().fields.get_field(field_id)
   }
 
-  fn create_field(
+  async fn create_field(
     &self,
     view_id: &str,
     name: &str,
     field_type: FieldType,
     type_option_data: TypeOptionData,
-  ) -> Fut<Field> {
+  ) -> Field {
     let (_, field) = self.database.lock().create_field_with_mut(
       view_id,
       name.to_string(),
@@ -1290,105 +1291,95 @@ impl DatabaseViewOperation for DatabaseViewOperationImpl {
       },
       default_field_settings_by_layout_map(),
     );
-    to_fut(async move { field })
+    field
   }
 
-  fn update_field(
+  async fn update_field(
     &self,
     type_option_data: TypeOptionData,
     old_field: Field,
-  ) -> FutureResult<(), FlowyError> {
-    let weak_editor_by_view_id = Arc::downgrade(&self.editor_by_view_id);
-    let weak_database = Arc::downgrade(&self.database);
-    FutureResult::new(async move {
-      if let (Some(database), Some(editor_by_view_id)) =
-        (weak_database.upgrade(), weak_editor_by_view_id.upgrade())
-      {
-        let view_editors = editor_by_view_id.read().await.values().cloned().collect();
-        let _ =
-          update_field_type_option_fn(&database, &view_editors, type_option_data, old_field).await;
-      }
-      Ok(())
-    })
+  ) -> FlowyResult<()> {
+    let view_editors = self
+      .editor_by_view_id
+      .read()
+      .await
+      .values()
+      .cloned()
+      .collect();
+    let _ =
+      update_field_type_option_fn(&self.database, &view_editors, type_option_data, old_field).await;
+    Ok(())
   }
 
-  fn get_primary_field(&self) -> Fut<Option<Arc<Field>>> {
-    let field = self
+  async fn get_primary_field(&self) -> Option<Arc<Field>> {
+    self
       .database
       .lock()
       .fields
       .get_primary_field()
-      .map(Arc::new);
-    to_fut(async move { field })
+      .map(Arc::new)
   }
 
-  fn index_of_row(&self, view_id: &str, row_id: &RowId) -> Fut<Option<usize>> {
-    let index = self.database.lock().index_of_row(view_id, row_id);
-    to_fut(async move { index })
+  async fn index_of_row(&self, view_id: &str, row_id: &RowId) -> Option<usize> {
+    self.database.lock().index_of_row(view_id, row_id)
   }
 
-  fn get_row(&self, view_id: &str, row_id: &RowId) -> Fut<Option<(usize, Arc<RowDetail>)>> {
+  async fn get_row(&self, view_id: &str, row_id: &RowId) -> Option<(usize, Arc<RowDetail>)> {
     let index = self.database.lock().index_of_row(view_id, row_id);
     let row_detail = self.database.lock().get_row_detail(row_id);
-    to_fut(async move {
-      match (index, row_detail) {
-        (Some(index), Some(row_detail)) => Some((index, Arc::new(row_detail))),
-        _ => None,
-      }
-    })
+    match (index, row_detail) {
+      (Some(index), Some(row_detail)) => Some((index, Arc::new(row_detail))),
+      _ => None,
+    }
   }
 
-  fn get_rows(&self, view_id: &str) -> Fut<Vec<Arc<RowDetail>>> {
-    let database = self.database.clone();
+  async fn get_rows(&self, view_id: &str) -> Vec<Arc<RowDetail>> {
+    let cloned_database = self.database.clone();
+    // offloads the blocking operation to a thread where blocking is acceptable. This prevents
+    // blocking the main asynchronous runtime
     let view_id = view_id.to_string();
-    to_fut(async move {
-      let cloned_database = database.clone();
-      // offloads the blocking operation to a thread where blocking is acceptable. This prevents
-      // blocking the main asynchronous runtime
-      let row_orders = tokio::task::spawn_blocking(move || {
-        cloned_database.lock().get_row_orders_for_view(&view_id)
+    let row_orders =
+      tokio::task::spawn_blocking(move || cloned_database.lock().get_row_orders_for_view(&view_id))
+        .await
+        .unwrap_or_default();
+    tokio::task::yield_now().await;
+
+    let mut all_rows = vec![];
+
+    // Loading the rows in chunks of 10 rows in order to prevent blocking the main asynchronous runtime
+    for chunk in row_orders.chunks(10) {
+      let cloned_database = self.database.clone();
+      let chunk = chunk.to_vec();
+      let rows = tokio::task::spawn_blocking(move || {
+        let orders = cloned_database.lock().get_rows_from_row_orders(&chunk);
+        let lock_guard = cloned_database.lock();
+        orders
+          .into_iter()
+          .flat_map(|row| lock_guard.get_row_detail(&row.id))
+          .collect::<Vec<RowDetail>>()
       })
       .await
       .unwrap_or_default();
+
+      all_rows.extend(rows);
       tokio::task::yield_now().await;
+    }
 
-      let mut all_rows = vec![];
-
-      // Loading the rows in chunks of 10 rows in order to prevent blocking the main asynchronous runtime
-      for chunk in row_orders.chunks(10) {
-        let cloned_database = database.clone();
-        let chunk = chunk.to_vec();
-        let rows = tokio::task::spawn_blocking(move || {
-          let orders = cloned_database.lock().get_rows_from_row_orders(&chunk);
-          let lock_guard = cloned_database.lock();
-          orders
-            .into_iter()
-            .flat_map(|row| lock_guard.get_row_detail(&row.id))
-            .collect::<Vec<RowDetail>>()
-        })
-        .await
-        .unwrap_or_default();
-
-        all_rows.extend(rows);
-        tokio::task::yield_now().await;
-      }
-
-      all_rows.into_iter().map(Arc::new).collect()
-    })
+    all_rows.into_iter().map(Arc::new).collect()
   }
 
   fn remove_row(&self, row_id: &RowId) -> Option<Row> {
     self.database.lock().remove_row(row_id)
   }
 
-  fn get_cells_for_field(&self, view_id: &str, field_id: &str) -> Fut<Vec<Arc<RowCell>>> {
+  async fn get_cells_for_field(&self, view_id: &str, field_id: &str) -> Vec<Arc<RowCell>> {
     let cells = self.database.lock().get_cells_for_field(view_id, field_id);
-    to_fut(async move { cells.into_iter().map(Arc::new).collect() })
+    cells.into_iter().map(Arc::new).collect()
   }
 
-  fn get_cell_in_row(&self, field_id: &str, row_id: &RowId) -> Fut<Arc<RowCell>> {
+  async fn get_cell_in_row(&self, field_id: &str, row_id: &RowId) -> Arc<RowCell> {
     let cell = self.database.lock().get_cell(field_id, row_id);
-    to_fut(async move { Arc::new(cell) })
+    Arc::new(cell)
   }
 
   fn get_layout_for_view(&self, view_id: &str) -> DatabaseLayout {
