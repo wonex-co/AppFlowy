@@ -23,7 +23,7 @@ function App() {
 
   const handleClick = async () => {
     let email = `${uuidv4()}@example.com`;
-    let password = "AppFlowy!2024";
+    let password = "Rekreio!2024";
     const payload = AddUserPB.fromObject({email: email, password: password })
     let result = await UserWasmEventAddUser(payload);
     if (!result.ok) {
